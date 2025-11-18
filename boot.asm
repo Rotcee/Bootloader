@@ -1,3 +1,5 @@
+%include "config.inc"
+
 [org 0x7c00]
 [bits 16]
 
@@ -25,7 +27,7 @@ start:
     call print_newline
     call load_stage2
 
-    jmp 0x800:0x0000 ; Saltar a la segunda fase
+    jmp STAGE2_SEGMENT:0x0000 ; Saltar a la segunda fase
 
 print_string:
     mov ah, 0x0e ; Función de teletipo
@@ -47,24 +49,24 @@ print_newline:
     ret
 
 load_stage2:
-    ; Resetear el disco duro
+    ; Resetear el disco
     mov ah, 0x00
-    mov dl, 0x80 ; Drive 0 (C:)
+    mov dl, 0x80
     int 0x13
     jc .error
 
     ; Preparar dirección de carga
-    mov ax, 0x800       ; Segmento donde cargar
-    mov es, ax          ; ES = 0x800
-    xor bx, bx          ; BX = 0. Dirección final = 0x8000
+    mov ax, STAGE2_SEGMENT
+    mov es, ax
+    xor bx, bx
 
-    ; Leer desde el disco
-    mov ah, 0x02        ; Función de lectura de disco
-    mov al, 1           ; Número de sectores a leer
-    mov ch, 0           ; Pista/Cilindro
-    mov cl, 2           ; Sector de inicio
-    mov dh, 0           ; Cabeza
-    mov dl, 0x80        ; Drive 0 (C:)
+    ; Leer todos los sectores declarados para la fase 2
+    mov ah, 0x02
+    mov al, STAGE2_SECTORS
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
+    mov dl, 0x80
     int 0x13
     jc .error
     ret

@@ -1,13 +1,22 @@
+%include "config.inc"
 [bits 16]
 
 BUFFER_SIZE equ 64
 CMD_NAME_MAX equ 16
+CODE_SEG    equ 0x08
+DATA_SEG    equ 0x10
+PROTECTED_MODE_ENTRY_LINEAR equ (STAGE2_BASE + protected_mode_entry)
 
 start_stage2:
     ; Configurar segmentos de datos y extra
     mov ax, cs
     mov ds, ax
     mov es, ax
+    cli
+    mov ax, 0x7000
+    mov ss, ax
+    mov sp, 0x0000
+    sti
 
 shell_loop:
     mov si, prompt
@@ -80,6 +89,11 @@ run_command:
     call strcmp
     je .do_echo
 
+    mov si, cmd_boot_str
+    mov di, cmd_name
+    call strcmp
+    je .do_boot
+
     ; Comando desconocido
     mov si, msg_unknown
     call print_string
@@ -127,6 +141,22 @@ run_command:
     je .newline_only
     call print_string
 .newline_only:
+    call print_newline
+    ret
+
+.do_boot:
+    mov si, msg_loading_kernel
+    call print_string
+    call print_newline
+    call load_kernel
+    jc .boot_failed
+    mov si, msg_kernel_loaded
+    call print_string
+    call print_newline
+    call enter_protected_mode
+.boot_failed:
+    mov si, msg_kernel_error
+    call print_string
     call print_newline
     ret
 
@@ -282,6 +312,54 @@ print_newline:
     int 0x10
     ret
 
+load_kernel:
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ax, KERNEL_LOAD_SEG
+    mov es, ax
+    mov bx, KERNEL_LOAD_OFF
+    mov ah, 0x02
+    mov al, KERNEL_TOTAL_SECTORS
+    mov ch, 0
+    mov cl, KERNEL_FIRST_SECTOR
+    mov dh, 0
+    mov dl, 0x80
+    int 0x13
+    jc .error
+    clc
+    jmp .done
+.error:
+    stc
+.done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+enter_protected_mode:
+    cli
+    call enable_a20
+    lgdt [gdt_descriptor]
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
+    jmp dword CODE_SEG:PROTECTED_MODE_ENTRY_LINEAR
+
+enable_a20:
+    push ax
+    in al, 0x92
+    test al, 00000010b
+    jnz .done
+    or al, 00000010b
+    and al, 11111110b
+    out 0x92, al
+.done:
+    pop ax
+    ret
+
 ; --- Datos ---
 prompt db '> ', 0
 msg_unknown db 'Comando desconocido.', 0
@@ -289,6 +367,7 @@ cmd_clear_str db 'clear', 0
 cmd_reboot_str db 'reboot', 0
 cmd_time_str db 'time', 0
 cmd_echo_str db 'echo', 0
+cmd_boot_str db 'boot', 0
 cmd_name times CMD_NAME_MAX db 0
 
 time_h db 0
@@ -298,3 +377,43 @@ time_s db 0
 buffer_len db 0
 cmd_buffer times BUFFER_SIZE db 0
 args_ptr dw 0
+msg_loading_kernel db 'Cargando kernel ELF...', 0
+msg_kernel_loaded db 'Kernel cargado. Entrando en modo protegido.', 0
+msg_kernel_error db 'Fallo al cargar el kernel.', 0
+
+gdt_start:
+    dq 0
+gdt_code:
+    dw 0xFFFF
+    dw 0
+    db 0
+    db 10011010b
+    db 11001111b
+    db 0
+gdt_data:
+    dw 0xFFFF
+    dw 0
+    db 0
+    db 10010010b
+    db 11001111b
+    db 0
+gdt_end:
+
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1
+    dd STAGE2_BASE + gdt_start
+
+[bits 32]
+protected_mode_entry:
+    mov ax, DATA_SEG
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, KERNEL_STACK_TOP
+    mov eax, KERNEL_LOAD_PHYS
+    jmp eax
+
+stage2_end:
+times STAGE2_TOTAL_SIZE - ($ - $$) db 0
