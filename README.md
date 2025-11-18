@@ -1,5 +1,44 @@
 # Guía integral del Bootloader
 
+## Cómo Usar (Build & Run)
+
+### Requisitos
+
+Necesitarás las siguientes herramientas instaladas y accesibles en el PATH de tu sistema:
+- **NASM:** Ensamblador para compilar los archivos de assembly.
+- **QEMU:** Emulador para ejecutar la imagen de disco generada.
+
+### Pasos
+
+1.  **Compilar los binarios:**
+    Abre una terminal en el directorio del proyecto y ejecuta los siguientes comandos para ensamblar cada parte del bootloader y el kernel:
+    ```sh
+    nasm -f bin boot.asm -o boot.bin
+    nasm -f bin stage2.asm -o stage2.bin
+    nasm -f bin kernel.asm -o kernel.bin
+    ```
+
+2.  **Crear la imagen de disco:**
+    Une los archivos binarios en el orden correcto para crear la imagen de arranque `boot.img`.
+
+    - En **Windows**:
+      ```cmd
+      copy /b boot.bin + stage2.bin + kernel.bin boot.img
+      ```
+    - En **Linux o macOS**:
+      ```sh
+      cat boot.bin stage2.bin kernel.bin > boot.img
+      ```
+
+3.  **Ejecutar el bootloader:**
+    Utiliza QEMU para arrancar desde la imagen de disco que acabas de crear:
+    ```sh
+    qemu-system-x86_64 -drive format=raw,file=boot.img
+    ```
+    Esto abrirá una ventana de QEMU donde verás el bootloader en acción. Podrás interactuar con la shell de la segunda etapa y usar el comando `boot` para cargar el kernel.
+
+---
+
 Esta guía describe cada componente del proyecto, a qué problema responde y cómo funciona línea a línea. Úsala como referencia para mantener o extender la cadena de arranque.
 
 ---
@@ -20,8 +59,6 @@ Esta guía describe cada componente del proyecto, a qué problema responde y có
 | `stage2.asm`       | Etapa 2 – shell BIOS + cargador del kernel + transición a modo protegido. |
 | `kernel.asm`       | Kernel ELF de demostración (modo protegido).                              |
 | `config.inc`       | Constantes compartidas (segmentos, offsets, tamaños).                     |
-| `build.bat`        | Ensambla cada binario y concatena `boot.img`.                             |
-| `run.bat`          | Inicia QEMU con la imagen resultante.                                     |
 | `DOCUMENTACION.md` | Este documento.                                                           |
 
 Herramientas requeridas: NASM (`nasm -f bin`) y QEMU (`qemu-system-x86_64`).  
@@ -164,4 +201,5 @@ Subrutinas incluidas:
 > - Añadir texto → modificar `kernel_msg` (ajusta también `RIGHT_LIMIT` si se alarga mucho).
 
 El kernel demuestra así un pequeño efecto visual en modo protegido sin depender de BIOS ni de interrupciones adicionales.
+
 
