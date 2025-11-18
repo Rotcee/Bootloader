@@ -1,3 +1,4 @@
+kernel.bin
 build.bat
 run.bat
 boot.bin
@@ -5,5 +6,4 @@ boot.img
 data.bin
 fs_table.bin
 stage2.bin
-kernel.bin
 APUNTES_PRESENTACION.md
