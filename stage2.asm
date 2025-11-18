@@ -1,6 +1,7 @@
 [bits 16]
 
 BUFFER_SIZE equ 64
+CMD_NAME_MAX equ 16
 
 start_stage2:
     ; Configurar segmentos de datos y extra
@@ -24,24 +25,58 @@ run_command:
     mov bh, 0
     mov byte [cmd_buffer + bx], 0
 
+    ; Preparar cmd_name y puntero a argumentos
+    mov si, cmd_buffer
+    call skip_spaces
+    mov word [args_ptr], si
+    mov di, cmd_name
+    mov byte [di], 0
+    mov al, [si]
+    cmp al, 0
+    je .empty_input
+
+.copy_cmd:
+    lodsb
+    cmp al, 0
+    je .end_copy_zero
+    cmp al, ' '
+    je .end_copy_space
+    stosb
+    jmp .copy_cmd
+.end_copy_zero:
+    mov al, 0
+    stosb
+    mov word [args_ptr], si
+    jmp .compare_commands
+.end_copy_space:
+    mov al, 0
+    stosb
+    call skip_spaces
+    mov word [args_ptr], si
+    jmp .compare_commands
+
+.empty_input:
+    ret
+
     ; Comparar con comandos conocidos
+.compare_commands:
     mov si, cmd_clear_str
-    mov di, cmd_buffer
+    mov di, cmd_name
     call strcmp
     je .do_clear
 
     mov si, cmd_reboot_str
-    mov di, cmd_buffer
+    mov di, cmd_name
     call strcmp
     je .do_reboot
 
     mov si, cmd_time_str
-    mov di, cmd_buffer
+    mov di, cmd_name
     call strcmp
     je .do_time
 
     mov si, cmd_echo_str
-    mov di, cmd_buffer
+    mov di, cmd_name
     call strcmp
     je .do_echo
 
@@ -85,14 +120,29 @@ run_command:
     ret
 
 .do_echo:
-    ; Mover SI al inicio del mensaje (después de 'echo' y el espacio)
-    mov si, cmd_buffer
-    add si, 5 ; Saltar "echo "
+    mov si, [args_ptr]
+    call skip_spaces
+    mov al, [si]
+    cmp al, 0
+    je .newline_only
     call print_string
+.newline_only:
     call print_newline
     ret
 
 ; --- Subrutinas ---
+
+skip_spaces:
+    push ax
+.skip_loop:
+    mov al, [si]
+    cmp al, ' '
+    jne .done
+    inc si
+    jmp .skip_loop
+.done:
+    pop ax
+    ret
 
 print_colon:
     mov ah, 0x0e
@@ -239,6 +289,7 @@ cmd_clear_str db 'clear', 0
 cmd_reboot_str db 'reboot', 0
 cmd_time_str db 'time', 0
 cmd_echo_str db 'echo', 0
+cmd_name times CMD_NAME_MAX db 0
 
 time_h db 0
 time_m db 0
@@ -246,3 +297,4 @@ time_s db 0
 
 buffer_len db 0
 cmd_buffer times BUFFER_SIZE db 0
+args_ptr dw 0
