@@ -31,22 +31,99 @@ phdr:
     dd 5
     dd 0x1000
 
+SCREEN_COLS   equ 80
+VIDEO_BASE    equ 0xB8000
+RIGHT_LIMIT   equ 50            ; (SCREEN_COLS - len(mensaje))
+COLOR_DELAY   equ 40
+
 payload:
-    mov edi, 0xB8000
-    mov esi, kernel_msg
-    mov ah, 0x1F
-.print_loop:
-    lodsb
-    test al, al
-    je .halt
+    mov byte [pos], 0
+    mov byte [dir], 1
+    mov byte [color], 0x1F
+    mov byte [color_steps], 0
+
+.main_loop:
+    call clear_line
+    call draw_text
+    call delay
+
+    movzx eax, byte [pos]
+    movsx ecx, byte [dir]
+    add eax, ecx
+    cmp eax, 0
+    jl .hit_left
+    cmp eax, RIGHT_LIMIT
+    jg .hit_right
+    mov [pos], al
+    jmp .update_color
+
+.hit_left:
+    mov byte [pos], 0
+    neg ecx
+    mov [dir], cl
+    jmp .update_color
+
+.hit_right:
+    mov byte [pos], RIGHT_LIMIT
+    neg ecx
+    mov [dir], cl
+
+.update_color:
+    mov al, [color_steps]
+    inc al
+    cmp al, COLOR_DELAY
+    jb .store_steps
+    mov al, 0
+    mov bl, [color]
+    add bl, 0x10
+    cmp bl, 0xF0
+    jb .store_color
+    mov bl, 0x1F
+.store_color:
+    mov [color], bl
+.store_steps:
+    mov [color_steps], al
+    jmp .main_loop
+
+clear_line:
+    mov edi, VIDEO_BASE
+    mov ecx, SCREEN_COLS
+    mov ax, 0x0720
+.cl_loop:
     mov [edi], ax
     add edi, 2
-    jmp .print_loop
-.halt:
-    hlt
-    jmp .halt
+    loop .cl_loop
+    ret
 
-kernel_msg db 'Kernel ELF en modo protegido!', 0
+draw_text:
+    mov edi, VIDEO_BASE
+    movzx eax, byte [pos]
+    shl eax, 1
+    add edi, eax
+    mov esi, kernel_msg
+    mov ecx, kernel_len
+    mov ah, [color]
+.draw_loop:
+    mov al, [esi]
+    mov [edi], ax
+    inc esi
+    add edi, 2
+    loop .draw_loop
+    ret
+
+delay:
+    mov ecx, 100000000
+.delay_loop:
+    loop .delay_loop
+    ret
+
+pos   db 0
+dir   db 1
+color db 0x1F
+color_steps db 0
+
+kernel_msg db 'Kernel ELF en modo protegido! ', 0
+kernel_len equ $ - kernel_msg - 1
 payload_end:
 
 times KERNEL_TOTAL_BYTES - ($ - $$) db 0

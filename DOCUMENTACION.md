@@ -139,23 +139,31 @@ Subrutinas incluidas:
 
 1. **Cabecera ELF**
    - Identificador `0x7F 'ELF'`, tipo ejecutable (`dw 2`), arquitectura x86 (`dw 3`).
-   - Entrada (`dd KERNEL_LOAD_PHYS`) y puntero al programa (`dd phdr - $$`).
+   - Punto de entrada `KERNEL_LOAD_PHYS` y tabla de programas (`phdr`).
 
 2. **Program Header (`phdr`)**
-   - Tipo `1` (PT_LOAD), offset `payload - $$`, direcciones virtual/física = `KERNEL_LOAD_PHYS`.
-   - Tamaños en memoria/archivo: `payload_end - payload`.
+   - Tipo `PT_LOAD`: el payload se carga tal cual en memoria.
    - Flags `5` (ejecutable + legible) y alineación 0x1000.
 
-3. **Payload**
-   - Inicializa `EDI = 0xB8000`, `ESI = kernel_msg`, `AH = 0x1F` (color).
-   - Bucle `lodsb` → prueba de cero → escribe `AX` en `[EDI]` y avanza 2 bytes (texto de video).
-   - Tras imprimir la cadena, ejecuta `hlt` en bucle infinito.
+3. **Payload (animación tipo marquee)**
+   1. Define constantes (`SCREEN_COLS`, `VIDEO_BASE`, `RIGHT_LIMIT`, `COLOR_DELAY`) y variables (`pos`, `dir`, `color`, `color_steps`).
+   2. Bucle principal:
+      - Limpia la línea superior (`clear_line`), dibuja el mensaje a partir de la columna `pos` (`draw_text`) y espera (`delay`).
+      - Actualiza la posición, rebotando entre `0` y `RIGHT_LIMIT`, e invierte `dir` al tocar un borde.
+      - `color_steps` controla cada cuántos fotogramas se incrementa el color (`color`), evitando cambios demasiado rápidos.
+      - El bucle no sale nunca: la animación demuestra que el kernel tiene el control total de la pantalla en modo protegido.
+   3. `delay` tan solo consume ciclos (contador en `ECX`). Para ralentizar o acelerar el movimiento basta modificar esa constante.
 
 4. **Datos y relleno**
-   - `kernel_msg db 'Kernel ELF en modo protegido!', 0`.
-   - `times KERNEL_TOTAL_BYTES - ($ - $$) db 0` ocupa los sectores reservados.
+   - `kernel_msg` contiene el texto que se desplaza; `kernel_len` facilita el bucle de copiado.
+   - `times KERNEL_TOTAL_BYTES - ($ - $$) db 0` asegura que el binario ocupa los sectores previstos.
 
-El kernel es deliberadamente minimalista: demuestra que la CPU ya está en modo protegido y que el ELF ejecuta código propio sin regresar a Stage 2.
+> **Ajustes rápidos:**  
+> - Movimiento más lento/rápido → aumentar/disminuir el valor de `ECX` en la rutina `delay`.  
+> - Cambio de color menos frecuente → incrementar `COLOR_DELAY`.  
+> - Añadir texto → modificar `kernel_msg` (ajusta también `RIGHT_LIMIT` si se alarga mucho).
+
+El kernel demuestra así un pequeño efecto visual en modo protegido sin depender de BIOS ni de interrupciones adicionales.
 
 ---
 
