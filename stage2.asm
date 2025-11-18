@@ -3,9 +3,10 @@
 BUFFER_SIZE equ 64
 
 start_stage2:
-    ; Configurar segmento de datos
+    ; Configurar segmentos de datos y extra
     mov ax, cs
     mov ds, ax
+    mov es, ax
 
 shell_loop:
     mov si, prompt
@@ -34,10 +35,15 @@ run_command:
     call strcmp
     je .do_reboot
 
-    mov si, cmd_ls_str
+    mov si, cmd_time_str
     mov di, cmd_buffer
     call strcmp
-    je .do_ls
+    je .do_time
+
+    mov si, cmd_echo_str
+    mov di, cmd_buffer
+    call strcmp
+    je .do_echo
 
     ; Comando desconocido
     mov si, msg_unknown
@@ -52,143 +58,132 @@ run_command:
     ret
 
 .do_reboot:
-    int 0x19 ; Reiniciar el sistema (Warm boot)
+    int 0x19
     ret
 
-.do_ls:
+.do_time:
+    call read_cmos
 
-    ; --- Lógica de lectura de disco "en línea" ---
+    ; Imprimir Horas
+    mov al, [time_h]
+    call bcd_to_dec
+    call print_2_digits
+    call print_colon
 
-    ; Resetear el disco
+    ; Imprimir Minutos
+    mov al, [time_m]
+    call bcd_to_dec
+    call print_2_digits
+    call print_colon
 
-    mov ah, 0x00
-
-    mov dl, 0x80
-
-    int 0x13
-
-    jc .ls_error
-
-
-
-    ; Leer el sector 3 en 0x9000:0000
-
-    mov ax, 0x9000
-
-    mov es, ax
-
-    xor bx, bx
-
-    mov ah, 0x02
-
-    mov al, 1
-
-    mov ch, 0
-
-    mov cl, 3
-
-    mov dh, 0
-
-    mov dl, 0x80
-
-    int 0x13
-
-    jc .ls_error
-
-    ; --- Fin de la lectura en línea ---
-
-
-
-    ; Parsear y listar la tabla
-
-    mov si, 0
-
-.ls_loop:
-
-    mov al, [es:si]
-
-    cmp al, 0
-
-    je .ls_done
-
-
-
-    push si
-
-    push ds
-
-    mov ax, es
-
-    mov ds, ax
-
-    call print_string
-
-    pop ds
-
-    pop si
-
-
+    ; Imprimir Segundos
+    mov al, [time_s]
+    call bcd_to_dec
+    call print_2_digits
 
     call print_newline
-
-    add si, 12
-
-    jmp .ls_loop
-
-
-
-.ls_done:
-
     ret
 
-.ls_error:
-
-    mov si, msg_ls_err
-
+.do_echo:
+    ; Mover SI al inicio del mensaje (después de 'echo' y el espacio)
+    mov si, cmd_buffer
+    add si, 5 ; Saltar "echo "
     call print_string
-
     call print_newline
-
     ret
-
-
 
 ; --- Subrutinas ---
 
+print_colon:
+    mov ah, 0x0e
+    mov al, ':'
+    int 0x10
+    ret
+
+; Convierte un byte BCD en AL a un byte decimal en AL (usando AAD)
+bcd_to_dec:
+    mov ah, al
+    shr ah, 4       ; ah = dígito de las decenas
+    and al, 0x0F    ; al = dígito de las unidades
+    aad             ; al = ah * 10 + al. El resultado binario queda en AL.
+    mov ah, 0       ; Limpiar AH por si acaso
+    ret
+
+; Imprime un número de 0-99 en AL como dos dígitos (sin usar DIV)
+print_2_digits:
+    mov cl, '0' ; Contador para las decenas
+.tens_loop:
+    cmp al, 10
+    jb .print_digits
+    sub al, 10
+    inc cl
+    jmp .tens_loop
+.print_digits:
+    ; Imprimir dígito de las decenas
+    push ax     ; Guardar el resto (unidades)
+    mov al, cl
+    mov ah, 0x0e
+    int 0x10
+    pop ax      ; Recuperar el resto
+
+    ; Imprimir dígito de las unidades
+    add al, '0'
+    mov ah, 0x0e
+    int 0x10
+    ret
+
+; Lee la hora del CMOS y la guarda en las variables time_h, time_m, time_s
+read_cmos:
+    ; Esperar a que no haya una actualización en progreso
+.wait:
+    mov al, 0x0A    ; Status Register A
+    out 0x70, al
+    in al, 0x71
+    test al, 0x80   ; Bit 7 es el 'Update in progress' flag
+    jnz .wait
+
+    ; Leer segundos
+    mov al, 0x00
+    out 0x70, al
+    in al, 0x71
+    mov [time_s], al
+
+    ; Leer minutos
+    mov al, 0x02
+    out 0x70, al
+    in al, 0x71
+    mov [time_m], al
+
+    ; Leer horas
+    mov al, 0x04
+    out 0x70, al
+    in al, 0x71
+    mov [time_h], al
+    ret
+
 read_line:
-
 .loop:
-
     mov ah, 0x00
     int 0x16
-
-
     cmp al, 0x0d ; Enter
-    je .done
-
+    je read_line_done
     cmp al, 0x08 ; Backspace
     je .backspace
-
     mov bl, [buffer_len]
     cmp bl, BUFFER_SIZE - 1
     jge .loop
-
     mov [di], al
     inc di
     inc byte [buffer_len]
-
     mov ah, 0x0e
     int 0x10
     jmp .loop
-
 .backspace:
     mov bl, [buffer_len]
     cmp bl, 0
     je .loop
-
     dec di
     dec byte [buffer_len]
-
     mov ah, 0x0e
     mov al, 0x08
     int 0x10
@@ -197,8 +192,7 @@ read_line:
     mov al, 0x08
     int 0x10
     jmp .loop
-
-.done:
+read_line_done:
     call print_newline
     ret
 
@@ -216,8 +210,6 @@ strcmp:
 .no_match:
     ret
 .match:
-    ; Para que el 'je' funcione fuera, necesitamos setear el flag Z
-    ; lo hacemos comparando algo consigo mismo.
     cmp ax, ax
     ret
 
@@ -245,11 +237,12 @@ prompt db '> ', 0
 msg_unknown db 'Comando desconocido.', 0
 cmd_clear_str db 'clear', 0
 cmd_reboot_str db 'reboot', 0
-cmd_ls_str db 'ls', 0
-msg_ls_ok db 'Tabla de ficheros leida.', 0
-msg_ls_err db 'Error al leer el disco.', 0
+cmd_time_str db 'time', 0
+cmd_echo_str db 'echo', 0
+
+time_h db 0
+time_m db 0
+time_s db 0
 
 buffer_len db 0
 cmd_buffer times BUFFER_SIZE db 0
-
-times 512 - ($ - $) db 0
