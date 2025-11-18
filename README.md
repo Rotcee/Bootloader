@@ -165,36 +165,3 @@ Subrutinas incluidas:
 
 El kernel demuestra así un pequeño efecto visual en modo protegido sin depender de BIOS ni de interrupciones adicionales.
 
----
-
-## 8. Scripts y pruebas
-
-### 8.1 Construcción
-```bat
-> build.bat
-```
-1. Ensambla `boot.asm`, `stage2.asm`, `kernel.asm`.
-2. Concatena los binarios en `boot.img` mediante `copy /b`.
-
-### 8.2 Ejecución
-Antes de invocar QEMU, define qué se va a comprobar (por ejemplo, “verificar que `boot` carga el kernel y la salida se queda en el mensaje del kernel”).  
-Luego ejecuta:
-```bat
-> run.bat
-```
-Secuencia a validar:
-1. Mensajes de Stage 1.
-2. Prompt del shell y funcionamiento de `clear`, `reboot`, `time`, `echo`.
-3. Comando `boot`: mensajes de carga, pantalla renovada y texto “Kernel ELF en modo protegido!”. La sesión debe quedarse en ese mensaje (bucle `hlt`).
-
----
-
-## 9. Posibles mejoras
-1. Añadir más comandos al shell (por ejemplo, exploración de memoria o lectura de otros sectores).
-2. Implementar controladores básicos en el kernel (teclado en modo protegido, PIT para temporizadores).
-3. Migrar la carga de disco a LBA o soportar sistemas de archivos (FAT, ext2).
-4. Automatizar pruebas con QEMU (`-serial stdio`) para capturar la salida y compararla con expectativas.
-
----
-
-Con esta estructura (visión global → detalle por módulo → proceso de pruebas) podrás navegar fácilmente por el código ensamblador y entender qué hace cada instrucción dentro del flujo completo de arranque.
